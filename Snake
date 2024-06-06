@@ -1,0 +1,225 @@
+import pygame
+import random
+import copy
+from enum import Enum
+
+# Klasy Kierunek, Segment, Jablko, Jajo, Waz oraz kod główny gry
+
+class Kierunek(Enum):
+    GORA = 0
+    PRAWO = 1
+    DOL = 2
+    LEWO = 3
+
+class Segment(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.obraz = pygame.image.load("images/segment.png")
+        self.pozycja = pygame.Rect(-32, -32, 32, 32)
+        self.ostatnia_pozycja = None
+
+    def przesun(self, nowa_pozycja):
+        self.ostatnia_pozycja = copy.deepcopy(self.pozycja)
+        self.pozycja = copy.deepcopy(nowa_pozycja)
+
+class Jablko(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.obraz = pygame.image.load("images/apple.png")
+        losowa_pozycja = pygame.Rect(random.randint(0, 24)*32, random.randint(1, 18)*32, 32, 32)
+        self.rect = losowa_pozycja
+
+class Jajo(pygame.sprite.Sprite):
+    def __init__(self, nowa_pozycja):
+        super().__init__()
+        self.obraz = pygame.image.load("images/egg.png")
+        self.rect = nowa_pozycja
+
+class Waz(pygame.sprite.Sprite):
+    def __init__(self):
+        #oryginalny obraz glowy
+        self.oryginalny_obraz = pygame.image.load("images/head.png")
+        #obraz pomocniczny, bedzie sie on zmienial przy zmienie kierunku gracza
+        self.obraz = pygame.transform.rotate(self.oryginalny_obraz, 0)
+        #wspolrzednie glowy
+        self.rect = self.obraz.get_rect(center=(12*32+16, 9*32+16))
+        #zmienne odpowiedzialne za kierunek, oraz nowy wyznaczony kierunek
+        self.kierunek = Kierunek.GORA
+        self.nowy_kierunek = Kierunek.GORA
+        #zapisana ostatnia pozycja weza, uzyjemy jej do zmiany pozycji segmentow
+        self.ostatnia_pozycja = self.rect
+        #informacje o dodaniu nowego segmentu oraz ich lista
+        self.dodaj_segment = False
+        self.segmenty = []
+
+    def zmien_kierunek(self, kierunek):
+        zmiana_mozliwa = True
+        if kierunek == Kierunek.GORA and self.kierunek == Kierunek.DOL:
+            zmiana_mozliwa = False
+        if kierunek == Kierunek.DOL and self.kierunek == Kierunek.GORA:
+            zmiana_mozliwa = False
+        if kierunek == Kierunek.LEWO and self.kierunek == Kierunek.PRAWO:
+            zmiana_mozliwa = False
+        if kierunek == Kierunek.PRAWO and self.kierunek == Kierunek.LEWO:
+            zmiana_mozliwa = False
+        if zmiana_mozliwa: 
+            self.nowy_kierunek = kierunek
+
+    def sprawdz_kolizje(self):
+        #ugryzienie ogona
+        for segment in self.segmenty:
+            if self.rect.topleft == segment.pozycja.topleft:
+                return True
+
+        #wyjscie poza ekran
+        if self.rect.top < 0 or self.rect.top >= 608:
+            return True
+        if self.rect.left < 0 or self.rect.left >= 800:
+            return True
+        
+        return False
+
+    def aktualizuj(self):
+        self.kierunek = self.nowy_kierunek
+        self.obraz = pygame.transform.rotate(self.oryginalny_obraz, (self.kierunek.value*-90))
+
+        self.ostatnia_pozycja = copy.deepcopy(self.rect)
+        if self.kierunek == Kierunek.GORA:
+            self.rect.move_ip(0, -32)
+        if self.kierunek == Kierunek.PRAWO:
+            self.rect.move_ip(32, 0)
+        if self.kierunek == Kierunek.LEWO:
+            self.rect.move_ip(-32, 0)
+        if self.kierunek == Kierunek.DOL:
+            self.rect.move_ip(0, 32)
+        
+        #poruszanie segmentami
+        for i in range(len(self.segmenty)):
+            if i == 0:
+                self.segmenty[i].przesun(self.ostatnia_pozycja)
+            else:
+                self.segmenty[i].przesun(self.segmenty[i-1].ostatnia_pozycja)
+
+        #dodawanie nowego segmentu
+        if self.dodaj_segment:
+            nowy_segment = Segment()
+
+            nowa_pozycja = None
+            if len(self.segmenty) > 0:
+                nowa_pozycja = copy.deepcopy(self.segmenty[-1].pozycja)
+            else:
+                nowa_pozycja = copy.deepcopy(self.ostatnia_pozycja)
+            nowy_segment.pozycja = nowa_pozycja
+            self.segmenty.append(nowy_segment)
+            self.dodaj_segment = False
+    
+    def rysuj_segmenty(self, ekran):
+        for segment in self.segmenty:
+            ekran.blit(segment.obraz, segment.pozycja)
+
+    def jedz_jablko(self):
+        self.dodaj_segment = True
+
+#szerokość i wysokość ekranu
+SZEROKOSC_EKRANU = 800
+WYSOKOSC_EKRANU = 608
+Punkty = 0
+
+#stworzenie tla
+tlo = pygame.Surface((SZEROKOSC_EKRANU, WYSOKOSC_EKRANU))
+for i in range(25):
+    for j in range(19):
+        obraz = pygame.image.load("images/background.png")
+        maska = (random.randrange(0, 100), random.randrange(0,100), random.randrange(0,100))
+       
+        obraz.fill(maska, special_flags=pygame.BLEND_ADD)
+        tlo.blit(obraz, (i*32, j*32))
+
+#ustawienia
+pygame.init()
+pygame.font.init()
+#obiekt ekranu i zegara
+ekran = pygame.display.set_mode([SZEROKOSC_EKRANU, WYSOKOSC_EKRANU])
+zegar = pygame.time.Clock()
+#obiekt czcionki
+moja_czcionka = pygame.font.SysFont('', 50)
+
+#Wąż
+waz = Waz()
+PORUSZ_WEZEM = pygame.USEREVENT + 1
+pygame.time.set_timer(PORUSZ_WEZEM, 200)
+
+#jabłka
+jablko = Jablko()
+jablka = pygame.sprite.Group()
+jablka.add(jablko)
+
+#jajka
+jaja = pygame.sprite.Group()
+
+gra_dziala = True
+while gra_dziala:
+    for zdarzenie in pygame.event.get():
+        if zdarzenie.type == pygame.KEYDOWN:
+            if zdarzenie.key == pygame.K_ESCAPE:
+                gra_dziala = False
+            if zdarzenie.key == pygame.K_w:
+                waz.zmien_kierunek(Kierunek.GORA)
+            if zdarzenie.key == pygame.K_s:
+                waz.zmien_kierunek(Kierunek.DOL)
+            if zdarzenie.key == pygame.K_a:
+                waz.zmien_kierunek(Kierunek.LEWO)
+            if zdarzenie.key == pygame.K_d:
+                waz.zmien_kierunek(Kierunek.PRAWO)
+
+        elif zdarzenie.type == PORUSZ_WEZEM:
+            waz.aktualizuj()
+        elif zdarzenie.type == pygame.QUIT:
+            gra_dziala = False
+        
+    #sprawdzenie czy glowa weza jest na jablku
+    kolizja_z_jablkiem = pygame.sprite.spritecollideany(waz, jablka)
+    if kolizja_z_jablkiem != None:
+        kolizja_z_jablkiem.kill()
+        waz.jedz_jablko()
+        jablko = Jablko()
+        jablka.add(jablko)
+        Punkty += 1
+
+        #dodanie jajka
+        if (Punkty % 5) == 0:
+            jajo = Jajo(waz.segmenty[-1].ostatnia_pozycja)
+            jaja.add(jajo)
+
+    #kolizja z jajami
+    kolizja_z_jajem = pygame.sprite.spritecollideany(waz, jaja)
+    if kolizja_z_jajem != None:
+        gra_dziala = False
+    
+    #rysowanie tła
+    ekran.blit(tlo, (0, 0))
+    #rysowanie segmentow
+    waz.rysuj_segmenty(ekran)
+    #rysowanie glłowy węża
+    ekran.blit(waz.obraz, waz.rect)
+    #rysowanie jablek
+    for jablko in jablka:
+        ekran.blit(jablko.obraz, jablko.rect)
+
+    #rysowanie jaj
+    for jajo in jaja:
+        ekran.blit(jajo.obraz, jajo.rect)
+
+    #wyswietlenie wyniku
+    tekst_z_wynikiem = moja_czcionka.render(f'ŁĄCZNA LICZBA PUNKTÓW: {Punkty}', False, (0, 0, 0))
+    ekran.blit(tekst_z_wynikiem, (16, 16))
+    #sprawdź czy koniec gry
+    if waz.sprawdz_kolizje():
+        tekst_z_przegrana = moja_czcionka.render('Przegrana', False, (200,0,0))
+        ekran.blit(tekst_z_przegrana, (SZEROKOSC_EKRANU/2-50, WYSOKOSC_EKRANU/2))
+        gra_dziala = False
+    
+    pygame.display.flip()
+    zegar.tick(60)
+
+pygame.quit()
